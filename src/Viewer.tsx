@@ -7,20 +7,26 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { useParams } from 'react-router-dom';
 import { S3_BUCKET_URL } from './s3-upload-config';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Loader } from 'lucide-react';
+import { Loader, RotateCcw } from 'lucide-react';
 
 export default function Viewer() {
   const { slug } = useParams<{ slug: string }>();
   const mountRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [objects, setObjects] = useState<THREE.Object3D[]>([]);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
 
   useEffect(() => {
     if (!slug) return;
 
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#666666');
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 3;
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -33,8 +39,12 @@ export default function Viewer() {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.update();
+    controlsRef.current = controls;
+
+    sceneRef.current = scene;
 
     const loadModel = async () => {
+      setLoading(true);
       const extensions = ['glb', 'gltf', 'fbx', 'obj'];
 
       for (const ext of extensions) {
@@ -44,32 +54,43 @@ export default function Viewer() {
           const res = await fetch(url, { method: 'HEAD' });
           if (!res.ok) continue;
 
+          let model: THREE.Object3D;
+
           if (ext === 'glb' || ext === 'gltf') {
             const gltf = await new GLTFLoader().loadAsync(url);
-            scene.add(gltf.scene);
+            model = gltf.scene;
           } else if (ext === 'fbx') {
-            const fbx = await new FBXLoader().loadAsync(url);
-            scene.add(fbx);
+            model = await new FBXLoader().loadAsync(url);
           } else if (ext === 'obj') {
-            const obj = await new OBJLoader().loadAsync(url);
-            obj.traverse((child: any) => {
+            model = await new OBJLoader().loadAsync(url);
+            model.traverse((child: any) => {
               if (child instanceof THREE.Mesh) {
                 child.material = new THREE.MeshStandardMaterial({ color: 0xcccccc });
               }
             });
-            scene.add(obj);
+          } else {
+            continue;
           }
 
-          setLoading(false);
+          scene.add(model);
+          const children: THREE.Object3D[] = [];
+          model.traverse((child) => {
+            if (child.name && child.type !== 'Scene') {
+              children.push(child);
+            }
+          });
+          setObjects(children);
+
           animate();
+          setLoading(false);
           return;
         } catch (err) {
           console.warn(`Failed to load ${ext} from: ${url}`, err);
         }
       }
 
-      setLoading(false);
       setError('Error loading model: unsupported format or file not found.');
+      setLoading(false);
     };
 
     const animate = () => {
@@ -86,15 +107,55 @@ export default function Viewer() {
     };
   }, [slug]);
 
+  const focusObject = (obj: THREE.Object3D) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const box = new THREE.Box3().setFromObject(obj);
+    const center = box.getCenter(new THREE.Vector3());
+    controlsRef.current.target.copy(center);
+    cameraRef.current.position.set(center.x, center.y, center.z + 2);
+    controlsRef.current.update();
+  };
+
+  const resetView = () => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    cameraRef.current.position.set(0, 0, 3);
+    controlsRef.current.target.set(0, 0, 0);
+    controlsRef.current.update();
+  };
+
   return (
-    <div className="min-h-screen bg-black text-white relative">
+    <div className="relative min-h-screen bg-black text-white">
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-10">
+        <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10">
           <Loader className="w-10 h-10 animate-spin text-white" />
         </div>
       )}
       {error && <p className="text-red-500 p-4 absolute z-10">{error}</p>}
+
       <div ref={mountRef} className="w-full h-full" />
+
+      <div className="absolute top-4 right-4 bg-white/10 backdrop-blur p-3 rounded text-sm z-20 max-h-[80vh] overflow-y-auto">
+        <h2 className="font-bold mb-2">Object Layers</h2>
+        {objects.length > 0 ? (
+          objects.map((obj, i) => (
+            <button
+              key={i}
+              onClick={() => focusObject(obj)}
+              className="text-left block w-full px-2 py-1 hover:bg-white/20 rounded"
+            >
+              {obj.name || `Object ${i + 1}`}
+            </button>
+          ))
+        ) : (
+          <p className="text-xs italic">No objects</p>
+        )}
+        <button
+          onClick={resetView}
+          className="mt-2 flex items-center gap-1 text-sm text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
+        >
+          <RotateCcw className="w-4 h-4" /> Reset View
+        </button>
+      </div>
     </div>
   );
 }
