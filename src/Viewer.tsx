@@ -12,6 +12,7 @@ export default function Viewer() {
   const { slug } = useParams<{ slug: string }>();
   const mountRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!slug) return;
@@ -58,6 +59,7 @@ export default function Viewer() {
             scene.add(obj);
           }
 
+          setIsLoading(false); // Model successfully loaded
           animate();
           return;
         } catch (err) {
@@ -65,6 +67,7 @@ export default function Viewer() {
         }
       }
 
+      setIsLoading(false);
       setError('Error loading model: unsupported format or file not found.');
     };
 
@@ -83,7 +86,12 @@ export default function Viewer() {
   }, [slug]);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-black text-white relative">
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      )}
       {error && <p className="text-red-500 p-4">{error}</p>}
       <div ref={mountRef} />
     </div>
