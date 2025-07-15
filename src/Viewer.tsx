@@ -7,12 +7,13 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { useParams } from 'react-router-dom';
 import { S3_BUCKET_URL } from './s3-upload-config';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Loader } from 'lucide-react';
 
 export default function Viewer() {
   const { slug } = useParams<{ slug: string }>();
   const mountRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!slug) return;
@@ -59,7 +60,7 @@ export default function Viewer() {
             scene.add(obj);
           }
 
-          setIsLoading(false); // Model successfully loaded
+          setLoading(false);
           animate();
           return;
         } catch (err) {
@@ -67,7 +68,7 @@ export default function Viewer() {
         }
       }
 
-      setIsLoading(false);
+      setLoading(false);
       setError('Error loading model: unsupported format or file not found.');
     };
 
@@ -87,13 +88,13 @@ export default function Viewer() {
 
   return (
     <div className="min-h-screen bg-black text-white relative">
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
-          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-10">
+          <Loader className="w-10 h-10 animate-spin text-white" />
         </div>
       )}
-      {error && <p className="text-red-500 p-4">{error}</p>}
-      <div ref={mountRef} />
+      {error && <p className="text-red-500 p-4 absolute z-10">{error}</p>}
+      <div ref={mountRef} className="w-full h-full" />
     </div>
   );
 }
