@@ -7,7 +7,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { useParams } from 'react-router-dom';
 import { S3_BUCKET_URL } from './s3-upload-config';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Loader, RotateCcw } from 'lucide-react';
+import { Loader, RotateCcw, Pause, Play } from 'lucide-react';
 
 export default function Viewer() {
   const { slug } = useParams<{ slug: string }>();
@@ -15,9 +15,13 @@ export default function Viewer() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [objects, setObjects] = useState<THREE.Object3D[]>([]);
+  const [isPlaying, setIsPlaying] = useState(true);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const animationFrameId = useRef<number>();
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -31,6 +35,7 @@ export default function Viewer() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     mountRef.current?.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -59,6 +64,12 @@ export default function Viewer() {
           if (ext === 'glb' || ext === 'gltf') {
             const gltf = await new GLTFLoader().loadAsync(url);
             model = gltf.scene;
+            if (gltf.animations && gltf.animations.length > 0) {
+              mixerRef.current = new THREE.AnimationMixer(model);
+              gltf.animations.forEach((clip) => {
+                mixerRef.current!.clipAction(clip).play();
+              });
+            }
           } else if (ext === 'fbx') {
             model = await new FBXLoader().loadAsync(url);
           } else if (ext === 'obj') {
@@ -81,8 +92,8 @@ export default function Viewer() {
           });
           setObjects(children);
 
-          animate();
           setLoading(false);
+          animate();
           return;
         } catch (err) {
           console.warn(`Failed to load ${ext} from: ${url}`, err);
@@ -94,18 +105,26 @@ export default function Viewer() {
     };
 
     const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
+      animationFrameId.current = requestAnimationFrame(animate);
+      if (sceneRef.current && cameraRef.current && rendererRef.current) {
+        if (isPlaying && mixerRef.current) {
+          mixerRef.current.update(0.016);
+        }
+        controlsRef.current?.update();
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      }
     };
 
     loadModel();
 
     return () => {
-      renderer.dispose();
-      mountRef.current?.removeChild(renderer.domElement);
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+      if (rendererRef.current && mountRef.current?.contains(rendererRef.current.domElement)) {
+        mountRef.current.removeChild(rendererRef.current.domElement);
+        rendererRef.current.dispose();
+      }
     };
-  }, [slug]);
+  }, [slug, isPlaying]);
 
   const focusObject = (obj: THREE.Object3D) => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -124,7 +143,7 @@ export default function Viewer() {
   };
 
   return (
-    <div className="relative min-h-screen bg-black text-white">
+    <div className="relative min-h-screen text-white">
       {loading && (
         <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10">
           <Loader className="w-10 h-10 animate-spin text-white" />
@@ -154,6 +173,12 @@ export default function Viewer() {
           className="mt-2 flex items-center gap-1 text-sm text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
         >
           <RotateCcw className="w-4 h-4" /> Reset View
+        </button>
+        <button
+          onClick={() => setIsPlaying(!isPlaying)}
+          className="mt-2 flex items-center gap-1 text-sm text-white bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded"
+        >
+          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />} {isPlaying ? 'Pause' : 'Play'}
         </button>
       </div>
     </div>
