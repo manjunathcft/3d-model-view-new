@@ -7,7 +7,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { useParams } from 'react-router-dom';
 import { S3_BUCKET_URL } from './s3-upload-config';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Loader, RotateCcw, Pause, Play } from 'lucide-react';
+import { Loader, RotateCcw, Pause, Play, Eye } from 'lucide-react';
 
 export default function Viewer() {
   const { slug } = useParams<{ slug: string }>();
@@ -16,12 +16,15 @@ export default function Viewer() {
   const [loading, setLoading] = useState(true);
   const [objects, setObjects] = useState<THREE.Object3D[]>([]);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [showLayerPanel, setShowLayerPanel] = useState(true);
+  const [useGrayMaterial, setUseGrayMaterial] = useState(false);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const animationFrameId = useRef<number>();
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const originalMaterials = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map());
 
   useEffect(() => {
     if (!slug) return;
@@ -88,6 +91,9 @@ export default function Viewer() {
           model.traverse((child) => {
             if (child.name && child.type !== 'Scene') {
               children.push(child);
+              if (child instanceof THREE.Mesh) {
+                originalMaterials.current.set(child, child.material);
+              }
             }
           });
           setObjects(children);
@@ -142,6 +148,23 @@ export default function Viewer() {
     controlsRef.current.update();
   };
 
+  const toggleMaterial = () => {
+    setUseGrayMaterial((prev) => {
+      const toGray = !prev;
+      objects.forEach((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          if (toGray) {
+            obj.material = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+          } else {
+            const original = originalMaterials.current.get(obj);
+            if (original) obj.material = original;
+          }
+        }
+      });
+      return toGray;
+    });
+  };
+
   return (
     <div className="relative min-h-screen text-white">
       {loading && (
@@ -153,34 +176,49 @@ export default function Viewer() {
 
       <div ref={mountRef} className="w-full h-full" />
 
-      <div className="absolute top-4 right-4 bg-white/10 backdrop-blur p-3 rounded text-sm z-20 max-h-[80vh] overflow-y-auto">
-        <h2 className="font-bold mb-2">Object Layers</h2>
-        {objects.length > 0 ? (
-          objects.map((obj, i) => (
-            <button
-              key={i}
-              onClick={() => focusObject(obj)}
-              className="text-left block w-full px-2 py-1 hover:bg-white/20 rounded"
-            >
-              {obj.name || `Object ${i + 1}`}
-            </button>
-          ))
-        ) : (
-          <p className="text-xs italic">No objects</p>
-        )}
-        <button
-          onClick={resetView}
-          className="mt-2 flex items-center gap-1 text-sm text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
-        >
-          <RotateCcw className="w-4 h-4" /> Reset View
-        </button>
-        <button
-          onClick={() => setIsPlaying(!isPlaying)}
-          className="mt-2 flex items-center gap-1 text-sm text-white bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded"
-        >
-          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />} {isPlaying ? 'Pause' : 'Play'}
-        </button>
-      </div>
+      {showLayerPanel && (
+        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur p-3 rounded text-sm z-20 max-h-[80vh] overflow-y-auto">
+          <h2 className="font-bold mb-2">Object Layers</h2>
+          {objects.length > 0 ? (
+            objects.map((obj, i) => (
+              <button
+                key={i}
+                onClick={() => focusObject(obj)}
+                className="text-left block w-full px-2 py-1 hover:bg-white/20 rounded"
+              >
+                {obj.name || `Object ${i + 1}`}
+              </button>
+            ))
+          ) : (
+            <p className="text-xs italic">No objects</p>
+          )}
+          <button
+            onClick={resetView}
+            className="mt-2 flex items-center gap-1 text-sm text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
+          >
+            <RotateCcw className="w-4 h-4" /> Reset View
+          </button>
+          <button
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="mt-2 flex items-center gap-1 text-sm text-white bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded"
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />} {isPlaying ? 'Pause' : 'Play'}
+          </button>
+          <button
+            onClick={toggleMaterial}
+            className="mt-2 flex items-center gap-1 text-sm text-white bg-gray-700 hover:bg-gray-800 px-2 py-1 rounded"
+          >
+            <Eye className="w-4 h-4" /> {useGrayMaterial ? 'Use Texture' : 'Gray Material'}
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowLayerPanel(!showLayerPanel)}
+        className="absolute top-4 left-4 z-20 bg-white/10 backdrop-blur px-2 py-1 rounded text-sm"
+      >
+        {showLayerPanel ? 'Hide Panel' : 'Show Panel'}
+      </button>
     </div>
   );
 }
